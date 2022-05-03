@@ -8,10 +8,17 @@
 #include <stdlib.h> // sizeof
 #include <stdbool.h>
 
+#include "../includes/request.h"
+#include "../includes/reply.h"
+
 // SERVIDOR
 
 // $ ./sdstored config-filename transformations-folder
 // $ ./sdstored etc/sdstored.conf bin/sdstore-transformations
+
+int server_pid; // PID do Servidor
+
+#define CLIENT_TO_SERVER_FIFO "namedpipe/client_to_server_fifo" // Path para guadra fifo do cliente para o servidor
 
 char* transf_folder[1024];
 
@@ -112,7 +119,7 @@ ssize_t readln(int fd, char* line, size_t size) {
     return i;
 }
 
-void read_config_file(char* path) {
+void read_config_file(char* path) { // Lê do ficheiro config os dados sobre a transformação
     char buffer[32];
     int config_file = open(path, O_RDONLY, 0666);
     if (config_file < 0) {
@@ -134,18 +141,58 @@ void read_config_file(char* path) {
     
 }
 
+// Flag: 0 -> fechar a fifo
+//       1 -> para continuar o programa
+void send_reply_message(char* message, int pid, int flag) {
+    Reply reply;
+    reply.argc = 1;
+    reply.flag = flag;
+    strcpy(reply.argv[0], message);
+    int server_to_client_fifo;
+    char name_server_to_client_fifo[128];
+    sprintf(name_server_to_client_fifo, "namedpipe/%d", pid);
+    if ((server_to_client_fifo = open(name_server_to_client_fifo, O_WRONLY)) == -1) {
+        char invalid_fifo[256];
+        int invalid_fifo_size = sprintf(invalid_fifo, "sdstore: couldn't open server-to-client FIFO\n");
+        write(1, invalid_fifo, invalid_fifo_size);
+        return 1;
+    }
+    write(server_to_client_fifo, &reply, sizeof(Reply));
+    close(server_to_client_fifo);
+    if (!flag) unlink(name_server_to_client_fifo);
+}
+
 // $ ./sdstored config-filename transformations-folder
 // $ ./sdstored etc/sdstored.conf bin/sdstore-transformations
 
 int main(int argc, char* argv[]) {
-
-    strcpy(transf_folder, argv[2]);
+    server_pid = getpid();
 
     if (argc == 3) {
-        read_config_file(argv[1]); // 
+        strcpy(transf_folder, argv[2]);
 
+        read_config_file(argv[1]);
 
-        // exec_process();
+        if (mkfifo(CLIENT_TO_SERVER_FIFO, 0666) == -1) {
+            char invalid_fifo[256];
+            int invalid_fifo_size = sprintf(invalid_fifo, "sdstored: couldn't create client-to-server FIFO\n");
+            write(1, invalid_fifo, invalid_fifo_size);
+            return 1;
+        }
+
+        Request request;
+        while (1) {
+            int client_to_server_fifo = open(CLIENT_TO_SERVER_FIFO, O_RDONLY, 0666);
+            while (read(client_to_server_fifo, &request, sizeof(Request)) > 0) {
+
+                if (request.n_transfs > 3 && strcmp("proc-file", request.argv[0]) == 0) { // Transformação válida
+                    send_reply_message("pending\n", request.pid, 1); // flag: 1 -> há conteúdo do cliente para ler
+                    char transfs_names[64][64];
+                }
+
+            }
+
+        }
 
     }
     else { // ERRO
@@ -154,5 +201,6 @@ int main(int argc, char* argv[]) {
         write(1, invalid, invalid_size);
         return 0;
     }
-    return 0;
+
+
 }

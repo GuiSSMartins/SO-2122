@@ -13,3 +13,6 @@ obj/sdstore.o: src/sdstore.c
 
 clean:
 	rm obj/* tmp/* bin/{sdstore,sdstored}
+
+format:
+	@-clang-format -style="{BasedOnStyle: Google, IndentWidth: 4}" -verbose -i src/*.c includes/*.h
