@@ -11,7 +11,9 @@
 #include "../includes/request.h"
 #include "../includes/reply.h"
 #include "../includes/transfs.h"
+#include "../includes/tprocess.h"
 #include "../includes/process.h"
+
 
 // SERVIDOR
 
@@ -22,12 +24,11 @@ int server_pid; // PID do Servidor
 
 #define CLIENT_TO_SERVER_FIFO "namedpipe/client_to_server_fifo" // Path para guadra fifo do cliente para o servidor
 
-char* transf_folder[1024];
+char* transf_folder[1024]; // path da pasta onde guardamos os progrmas das transformações
 
 
 Transf transfs[7]; // Só temos 7 transformações possíveis
 int transf_availables = 0;
-
 
 Process processes[1024]; // processos a serem executados ao mesmo tempo (max 1024 processos)
 Process process_queue[16][512]; // processos em fila-de-espera (Podemos guardar no máximo 512 processos em cada linha)
@@ -98,7 +99,10 @@ void read_config_file(char* path) { // Lê do ficheiro config os dados sobre a t
     char buffer[32];
     int config_file = open(path, O_RDONLY, 0666);
     if (config_file < 0) {
-        perror("sdstored: couldn't open file");
+        char invalid_config_file[256];
+        int invalid_config_file_size = sprintf(invalid_config_file, "sdstored: couldn't open file 'config-file'");
+        write(1, invalid_config_file, invalid_config_file_size );
+
     }
     for(int i=0; readln(config_file, buffer, 32) > 0; i++) {
         char* token = strtok(buffer, " ");
@@ -118,15 +122,15 @@ void read_config_file(char* path) { // Lê do ficheiro config os dados sobre a t
 
 // Flag: 0 -> fechar a fifo
 //       1 -> para continuar o programa
-void send_reply_message(char* message, int pid, int flag) {
+void send_reply_message(char* message, int pid, int status) {
     Reply reply;
     reply.argc = 1;
-    reply.flag = flag;
+    reply.status = status;
     strcpy(reply.argv[0], message);
     int server_to_client_fifo;
-    char name_server_to_client_fifo[128];
-    sprintf(name_server_to_client_fifo, "namedpipe/%d", pid);
-    if ((server_to_client_fifo = open(name_server_to_client_fifo, O_WRONLY)) == -1) {
+    char path_server_to_client_fifo[128];
+    sprintf(path_server_to_client_fifo, "namedpipe/%d", pid);
+    if ((server_to_client_fifo = open(path_server_to_client_fifo, O_WRONLY)) == -1) {
         char invalid_fifo[256];
         int invalid_fifo_size = sprintf(invalid_fifo, "sdstore: couldn't open server-to-client FIFO\n");
         write(1, invalid_fifo, invalid_fifo_size);
@@ -134,7 +138,25 @@ void send_reply_message(char* message, int pid, int flag) {
     }
     write(server_to_client_fifo, &reply, sizeof(Reply));
     close(server_to_client_fifo);
-    if (!flag) unlink(name_server_to_client_fifo);
+    if (!status) unlink(path_server_to_client_fifo);
+}
+
+int verify_transf(char* transf_name) {
+    int valid = 0;
+    for (int i = 0; i < 7 && !valid; i++)
+        valid |= (strcmp(transf_name, transfs[i].name) == 0);
+    return valid;
+}
+
+// transformações de um processo
+int verify_transfs(char transfs_names[64][64], int number_transf, int* index) {
+    int valid = 1;
+    int i;
+    for (i = 0; i < number_transf && valid; i++) {
+        valid &= verify_transf(transfs_names[i]);
+    }
+    *index = i - 1; // índice da última transformação válida
+    return valid;
 }
 
 // $ ./sdstored config-filename transformations-folder
@@ -160,9 +182,24 @@ int main(int argc, char* argv[]) {
             int client_to_server_fifo = open(CLIENT_TO_SERVER_FIFO, O_RDONLY, 0666);
             while (read(client_to_server_fifo, &request, sizeof(Request)) > 0) {
 
-                if (request.n_transfs > 3 && strcmp("proc-file", request.argv[0]) == 0) { // Transformação válida
+                if (request.n_args > 3 && strcmp("proc-file", request.argv[0]) == 0) { // Transformação válida
                     send_reply_message("pending\n", request.pid, 1); // flag: 1 -> há conteúdo do cliente para ler
                     char transfs_names[64][64];
+
+                    int last_valid_transf_index; // índice da última transformação válida
+
+                    // Não tem a prioridade
+                    for (int i = 3; i < request.n_args; i++) { // só a aprtir do índice 3, temos as strings das transformações
+                        strcpy(transfs_names[i - 3], request.argv[i]);
+                    }
+                    if (verify_transfs(transfs_names, request.n_args - 3, &last_valid_transf_index)) { // sem os argumentos de inicio do store
+                    
+                    }
+                    else {
+                        char message[1024];
+                        sprintf(message, "invalid transformation: %s\n", request.argv[last_valid_transf_index + 3]);
+                        send_message(message, request.pid, 0); // fechámos a pipe
+                    }
                 }
 
             }

@@ -1,3 +1,5 @@
+#ifndef __PROCESS__
+#define __PROCESS__
 
 #include "tprocess.h"
 
@@ -16,3 +18,5 @@ typedef struct process {
     bool active; // indica se o processo está ativo (ou não)
     bool inqueue; // indica se está em fila de espera / queue 
 } Process; // Processo
+
+#endif

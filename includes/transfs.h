@@ -1,3 +1,6 @@
+#ifndef __TRANSFS__
+#define __TRANSFS__
+
 // NAME: nop ; bcompress ; bdecompress ; gcompress ; gdecompress ; encrypt ; decrypt
 typedef struct transf {
     char name[16];
@@ -5,3 +8,5 @@ typedef struct transf {
     int running;
     int max;
 } Transf; // Transformação
+
+#endif
