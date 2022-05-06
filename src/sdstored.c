@@ -10,6 +10,8 @@
 
 #include "../includes/request.h"
 #include "../includes/reply.h"
+#include "../includes/transfs.h"
+#include "../includes/process.h"
 
 // SERVIDOR
 
@@ -22,36 +24,9 @@ int server_pid; // PID do Servidor
 
 char* transf_folder[1024];
 
-// NAME: nop ; bcompress ; bdecompress ; gcompress ; gdecompress ; encrypt ; decrypt
-typedef struct transf {
-    char name[16];
-    char bin[32];
-    int running;
-    int max;
-} Transf; // Transformação
 
 Transf transfs[7]; // Só temos 7 transformações possíveis
 int transf_availables = 0;
-
-typedef struct transfs_process {
-    int n; // nº de transformações que o processo tem de realizar para a transformação "name"
-    char name[16]; // nome da transformação
-} TProcess; // TP
-
-
-typedef struct process {
-    int client_pid; // PID do cliente
-    int fork_pid; // PID do processo-filho
-    TProcess tp[7];  
-    int tp_size; // nº de TIPOS de transformações que o processo terá de realizar
-                // ex: tp_size = 1 -> só temos de realizar um TIPO de transf, como apenas NOP, ou apenas BCOMPRESS, ... 
-    char transf_names[8][16]; // (var. auxiliar) nomes das várias transformações 
-    char name_input[1024]; // nome do ficheiro de input
-    char name_output[1024]; // nome do ficheiro de output
-    int number_transf; // nº de transformações que se irão realizar
-    bool active; // indica se o processo está ativo (ou não)
-    bool inqueue; // indica se está em fila de espera / queue 
-} Process; // Processo
 
 
 Process processes[1024]; // processos a serem executados ao mesmo tempo (max 1024 processos)
