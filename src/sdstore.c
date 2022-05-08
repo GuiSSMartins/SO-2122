@@ -49,11 +49,18 @@ void reply() {
     close(server_to_client_fifo);
 }
 
+void close_handler(int signum) {
+    unlink(path_server_to_client_fifo); // "destruir" o ficheiro da pipe // não recebemos mais informações do servidor 
+    exit(0);
+}
 
 int main(int argc, char* argv[]) {
     char buffer[1024];
 
     sprintf(path_server_to_client_fifo, "namedpipe/%d", (int)getpid());
+
+    signal(SIGINT, close_handler);
+    signal(SIGTERM, close_handler);
 
     if ((mkfifo(path_server_to_client_fifo, 0666)) == -1) {
         char invalid_fifo[256];
@@ -67,9 +74,7 @@ int main(int argc, char* argv[]) {
         char status[128];
         char example[128];
         int status_size = sprintf(status, "%s status\n", argv[0]);
-        int example_size = sprintf(example,
-                    "%s proc-file priority input-filename output-filename transformation-id-1 transformation-id-2 ...\n",
-                    argv[0]);
+        int example_size = sprintf(example, "%s proc-file priority input-filename output-filename transformation-id-1 transformation-id-2 ...\n", argv[0]);
         write(1, status, status_size);
         write(1, example, example_size);
     }

@@ -43,14 +43,32 @@ int process_total_size = 0; // Nº total de processos ATIVOS
 
 //         processes[number_process].active = true;
 
-int get_index_transf (char* transf) {
-    for (int i=0; i<7; i++) { // Temos apenas no máximo 7 tipos de transformação
-        if(strcmp(transf, transfs[i].name) == 0) { // Sáo iguais
-            return i;
-        }
-    }
+// NAME: encrypt ; decrypt; bcompress ; bdecompress ; gcompress ; gdecompress ; nop
+int hash_transf (char* transf_name) {
+    switch(transf_name[0]){
+        case 'd': //decrypt
+            return 0;
+           
+        case 'e': //encrypt
+            return 1;
+        case 'b':
+            switch(transf_name[1]){
+                case 'c': //bcompress
+                    return 2;
+                default: //bdecompress  
+                    return 3;
+            }
+        case 'g':
+            switch(transf_name[1]){
+                case 'c': //gcompress
+                    return 4;
+                default: //gdecompress  
+                    return 5;
+            }
 
-    return -1; // não encontramos
+        default: // nop
+            return 6;   
+    }
 }
 
 // Recebe apenas processos com apenas 1 transformação (Justificação do [0])
@@ -60,7 +78,7 @@ void exec_transf(int number_process) {
     int fd_input, fd_output;
     if (child_pid == 0) { // Filho -> Transformação
 
-        int transf_index = get_index_transf(processes[number_process].transf_names[0]); // Só uma transformação
+        int transf_index = hash_transf(processes[number_process].transf_names[0]); // Só uma transformação
         transfs[transf_index].running++;
 
         char transf_path[128];
@@ -77,16 +95,114 @@ void exec_transf(int number_process) {
 
         strcpy(transf_path, transf_folder);
         strcat(transf_path, transfs[transf_index].bin);
-        execl(transf_path, transf_path, NULL);
 
+        if (fork() == 0) {
+            execl(transf_path, transf_path, NULL);
+        } 
+        else {
+            wait(&status);
+            // kill(getppid(), SIGUSR1);
+        }
         _exit(0);
     }
     else { // Pai
         processes[number_process].fork_pid = child_pid;
-        wait(&status);
     }
 }
 
+// executa várias transformações
+void exec_transfs(int index_process) {
+    int child_pid;
+    int number_transfs = processes[index_process].number_transfs;
+    if ((child_pid = fork()) == 0) {
+        int status;
+        int pipes[number_transfs - 1][2];
+        int index, i, j;
+        for (i = 0; i < number_transfs - 1; i++) pipe(pipes[i]); // abrir as pipes
+        char transf_path[64];
+        for (i = 0; i < number_transfs; i++) {
+            if (i == 0) { // 1ª Pipe - Apenas ESCRITA
+                if (fork() == 0) {
+                    index = hash_tranfs(processes[index_process].transf_names[i]);
+                    for (j = 1; j < number_transfs - 1; j++) {
+                        close(pipes[j][0]);
+                        close(pipes[j][1]);
+                    }
+                    close(pipes[0][0]);
+
+                    int input_fd = open(processes[index_process].name_input, O_RDONLY);
+                    dup2(input_fd, 0);
+                    close(input_fd);
+
+                    dup2(pipes[0][1], 1);
+                    close(pipes[0][1]);
+
+                    strcpy(transf_path, transf_folder);
+                    strcat(transf_path, transfs[index].bin);
+
+                    execl(transf_path, transf_path, NULL);
+                    _exit(EXIT_FAILURE);
+                }
+            }
+            else if (i == number_transfs - 1) { // Última Pipe - Apenas LEITURA
+                if (fork() == 0) {
+                    index = hash_transf(processes[index_process].transf_names[i]);
+                    for (j = 0; j < number_transfs - 2; j++) {
+                        close(pipes[j][0]);
+                        close(pipes[j][1]);
+                    }
+                    close(pipes[i - 1][1]);
+
+                    dup2(pipes[i - 1][0], 0);
+                    close(pipes[i - 1][0]);
+
+                    int output_fd = open(processes[index_process].name_output, O_CREAT | O_WRONLY, 0666);
+                    dup2(output_fd, 1);
+                    close(output_fd);
+
+                    strcpy(transf_path, transf_folder);
+                    strcat(transf_path, transfs[index].bin);
+                    if (fork() == 0) {
+                        execl(transf_path, transf_path, NULL);
+                    }
+                    else {
+                        wait(&status);
+                        kill(server_pid, SIGUSR1);
+                    }
+                    _exit(EXIT_FAILURE);
+                }
+            }
+            else { // Outras Pipes - LEITURA e ESCRITA
+                if (fork() == 0) {
+                    index = hash_transf(processes[index_process].transf_names[i]);
+                    for (j = 0; j < number_transfs - 1; j++) {
+                        if (j != i - 1 && j != i) {
+                            close(pipes[j][0]);
+                            close(pipes[j][1]);
+                        }
+                    }
+
+                    close(pipes[i - 1][1]);
+                    dup2(pipes[i - 1][0], 0);
+                    close(pipes[i - 1][0]);
+
+                    close(pipes[i][0]);
+                    dup2(pipes[i][1], 1);
+                    close(pipes[i][1]);
+
+                    strcpy(transf_path, transf_folder);
+                    strcat(transf_path, transfs[index].bin);
+                    execl(transf_path, transf_path, NULL);
+                    _exit(EXIT_FAILURE);
+                }
+            }
+        }
+        _exit(EXIT_SUCCESS);
+    }
+    else {
+        processes[index_process].fork_pid = child_pid;
+    }
+}
 
 
 ssize_t readln(int fd, char* line, size_t size) {
@@ -106,15 +222,16 @@ void read_config_file(char* path) { // Lê do ficheiro config os dados sobre a t
     }
     for(int i=0; readln(config_file, buffer, 32) > 0; i++) {
         char* token = strtok(buffer, " ");
-        strcpy(transfs[i].name, token);
+        int r = hash_transf(token);
+        strcpy(transfs[r].name, token);
 
         char bin[64];
         sprintf(bin, "/bin/%s", transfs[i].name);
-        strcpy(transfs[i].bin, bin);
+        strcpy(transfs[r].bin, bin);
         
         token = strtok(NULL, " ");
-        transfs[i].max = atoi(token);
-        transf_availables += transfs[i].max;
+        transfs[r].max = atoi(token);
+        transf_availables += transfs[r].max;
     }
     close(config_file);
     
@@ -141,11 +258,11 @@ void send_reply_message(char* message, int pid, int status) {
     if (!status) unlink(path_server_to_client_fifo);
 }
 
+
 int verify_transf(char* transf_name) {
-    int valid = 0;
-    for (int i = 0; i < 7 && !valid; i++)
-        valid |= (strcmp(transf_name, transfs[i].name) == 0);
-    return valid;
+    int r = hash_transf(transf_name);
+    if (strcmp(transfs[r].name, transf_name) == 0) return 1;
+    else return 0;
 }
 
 // transformações de um processo
@@ -153,17 +270,52 @@ int verify_transfs(char transfs_names[64][64], int number_transf, int* index) {
     int valid = 1;
     int i;
     for (i = 0; i < number_transf && valid; i++) {
-        valid &= verify_transf(transfs_names[i]);
+        if (!verify_transf(transfs_names[i])) valid = 0;
     }
     *index = i - 1; // índice da última transformação válida
     return valid;
 }
+
+void close_handler(int signum) {
+    while(queue_total_size > 0){
+        processing();
+    }
+    unlink(CLIENT_TO_SERVER_FIFO);
+    exit(0);
+}
+
+// Sinal para "matar" um processo 'proc-file'
+// NÂO ESTÀ TERMIANDO!!!!!!!!!!!!!!
+/*
+void sigusr1_handler(int signum) {
+    int status;
+    int pid = wait(&status);
+
+    int i;
+    for (i = 0; i < process_total_size; i++) {
+        if (processes[i].fork_pid == pid) break;
+    }
+    processes[i].active = false;
+    for (int j = 0; j < processes[i].tp_size; j++) {
+        int r = hash_transf(processes[i].transf_names[j]);
+        transf_availables += transfs[r].running;
+        transfs[r].running = 0;
+    }
+    send_message("processed\n", processes[i].client_pid, 1);
+    processing();
+}
+*/
+
 
 // $ ./sdstored config-filename transformations-folder
 // $ ./sdstored etc/sdstored.conf bin/sdstore-transformations
 
 int main(int argc, char* argv[]) {
     server_pid = getpid();
+
+    signal(SIGINT, close_handler);
+    signal(SIGTERM, close_handler);
+    signal(SIGUSR1, sigusr1_handler);
 
     if (argc == 3) {
         strcpy(transf_folder, argv[2]);
@@ -194,6 +346,9 @@ int main(int argc, char* argv[]) {
                     }
                     if (verify_transfs(transfs_names, request.n_args - 3, &last_valid_transf_index)) { // sem os argumentos de inicio do store
                     
+                        TProcess tprocess[7]; // tuplo dos processos
+
+
                     }
                     else {
                         char message[1024];

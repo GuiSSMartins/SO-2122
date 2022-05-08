@@ -14,7 +14,7 @@ typedef struct process {
     int input_size;
     char name_output[1024]; // nome do ficheiro de output
     int output_size;
-    int number_transf; // nº de transformações que se irão realizar
+    int number_transfs; // nº de transformações que se irão realizar
     bool active; // indica se o processo está ativo (ou não)
     bool inqueue; // indica se está em fila de espera / queue 
 } Process; // Processo
