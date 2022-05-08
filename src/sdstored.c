@@ -222,16 +222,16 @@ void read_config_file(char* path) { // Lê do ficheiro config os dados sobre a t
     }
     for(int i=0; readln(config_file, buffer, 32) > 0; i++) {
         char* token = strtok(buffer, " ");
-        int r = hash_transf(token);
-        strcpy(transfs[r].name, token);
+        int transf_index = hash_transf(token);
+        strcpy(transfs[transf_index].name, token);
 
         char bin[64];
         sprintf(bin, "/bin/%s", transfs[i].name);
-        strcpy(transfs[r].bin, bin);
+        strcpy(transfs[transf_index].bin, bin);
         
         token = strtok(NULL, " ");
-        transfs[r].max = atoi(token);
-        transf_availables += transfs[r].max;
+        transfs[transf_index].max = atoi(token);
+        transf_availables += transfs[transf_index].max;
     }
     close(config_file);
     
@@ -239,6 +239,7 @@ void read_config_file(char* path) { // Lê do ficheiro config os dados sobre a t
 
 // Flag: 0 -> fechar a fifo
 //       1 -> para continuar o programa
+// pid do request
 void send_reply_message(char* message, int pid, int status) {
     Reply reply;
     reply.argc = 1;
@@ -258,15 +259,18 @@ void send_reply_message(char* message, int pid, int status) {
     if (!status) unlink(path_server_to_client_fifo);
 }
 
-
-int verify_transf(char* transf_name) {
-    int r = hash_transf(transf_name);
-    if (strcmp(transfs[r].name, transf_name) == 0) return 1;
+// verificar se o nome da tarnsformação recebida é uma tarnsformação válida
+int verify_transf_name(char* transf_name) {
+    int transf_index = hash_transf(transf_name);
+    if(transf_index != -1){
+        if (strcmp(transfs[transf_index].name, transf_name) == 0) return 1;
+    }
     else return 0;
+    
 }
 
-// transformações de um processo
-int verify_transfs(char transfs_names[64][64], int number_transf, int* index) {
+// verificar se nomes das tarnsformações pedidas no comando são tarnsformações válidas
+int verify_transfs_names(char transfs_names[64][64], int number_transf, int* index) {
     int valid = 1;
     int i;
     for (i = 0; i < number_transf && valid; i++) {
@@ -274,6 +278,72 @@ int verify_transfs(char transfs_names[64][64], int number_transf, int* index) {
     }
     *index = i - 1; // índice da última transformação válida
     return valid;
+}
+
+
+// Colocar informações sobre cada uma das transformações
+// Devolve o valor do tp_size -> nº de TIPOS de transformações num processo
+int add_info_tprocess(char transfs_names[64][64], int number_transfs, TProcess tprocess[7]) {
+    int tp_size = 0;
+    int i;
+    for (i = 0; i < number_transfs; i++) {
+        int transf_index = hash_transf(transfs_names[i]);
+        if (tprocess[transf_index].n == 0) {
+            tp_size++;
+        }
+        strcpy(tprocess[transf_index].name, transfs_names[i]);
+        tprocess[transf_index].n++;
+    }
+    return tp_size;
+}
+
+
+// verifica se a quantidade de transformações é válida para o máximo recebido
+int validate_transf(int index, int number) {
+    if (number > transfs[index].max) return 0;
+   
+    return (transfs[index].running + number <= transfs[index].max ? 1 : 0);
+    
+}
+
+// verifica se a quantidade de transformações é válida para o máximo recebido
+int validate_transfs(TProcess tprocess[7], int tp_size) {
+    int valid = 1;
+    int count = 0;
+    int i;
+    for (i = 0; i < 7 && valid && count < tp_size; i++) {
+        int transf_index = hash_transf(tprocess[i].name);
+        if(transf_index != -1){
+            count++;
+            if(!validate_trans(transf_index, tprocess[i].n)) valid = 0;
+        }
+        
+    }
+    return valid;
+}
+
+// atualizar o 'running' de cada uma das tarnsformações do processo 
+void save_transfs(TProcess tprocess[7]) {
+    int i;
+    for (i = 0; i < 7; i++) {
+        int transf_index = hash_transf(tprocess[i].name);
+        if(transf_index != -1){
+            transfs[transf_index].running += tprocess[i].n;
+        }
+    }
+}
+
+// obter nº de bytes de um ficheiro
+int get_file_size(int fd){
+    return lseek(fd, 0, SEEK_END);
+}
+
+// inicializar as várias variáveis da estrtura de um tprocess
+void init_tprocess(TProcess tprocess[7]){
+    for(int i = 0; i < 7; i++){
+        tprocess[i].n = 0;
+        strcpy(tprocess[i].name,"");
+    }
 }
 
 void close_handler(int signum) {
@@ -315,7 +385,7 @@ int main(int argc, char* argv[]) {
 
     signal(SIGINT, close_handler);
     signal(SIGTERM, close_handler);
-    signal(SIGUSR1, sigusr1_handler);
+    // signal(SIGUSR1, sigusr1_handler);
 
     if (argc == 3) {
         strcpy(transf_folder, argv[2]);
@@ -336,18 +406,52 @@ int main(int argc, char* argv[]) {
 
                 if (request.n_args > 3 && strcmp("proc-file", request.argv[0]) == 0) { // Transformação válida
                     send_reply_message("pending\n", request.pid, 1); // flag: 1 -> há conteúdo do cliente para ler
-                    char transfs_names[64][64];
+                    char transfs_names_process[64][64]; // nomes das várias transformações
 
                     int last_valid_transf_index; // índice da última transformação válida
 
                     // Não tem a prioridade
                     for (int i = 3; i < request.n_args; i++) { // só a aprtir do índice 3, temos as strings das transformações
-                        strcpy(transfs_names[i - 3], request.argv[i]);
+                        strcpy(transfs_names_process[i - 3], request.argv[i]);
                     }
-                    if (verify_transfs(transfs_names, request.n_args - 3, &last_valid_transf_index)) { // sem os argumentos de inicio do store
+                    // Só fazemos todas as transformações apenas se todos os nomes delas forem válidas
+                    if (verify_transfs(transfs_names_process, request.n_args - 3, &last_valid_transf_index)) { // sem os argumentos de inicio do store
                     
                         TProcess tprocess[7]; // tuplo dos processos
+                        init_tprocess(tprocess);
 
+                        // Nº total de transformações = argc - 3
+
+                        int tp_size = add_info_tprocess(transfs_names_process, request.n_args-3, tprocess);
+                        if (validate_transfs(tprocess, tp_size)) {
+                            // o nº de transformações está adequado para o máximo que podmeos ter
+                            Process process;
+                            int i;
+                            for (i = 3; i < request.n_args; i++) {
+                                strcpy(process.transf_names[i - 3], request.argv[i]);
+                            }
+                            process.number_transfs = request.n_args - 3;
+                            process.client_pid = request.pid;
+                            process.active = false;
+                            process.inqueue = true;
+                            queue_total_size++;
+                            strcpy(process.name_input, request.argv[1]);
+                            strcpy(process.name_output, request.argv[2]);
+                            process.tp_size = tp_size;
+                            for (i = 0; i < process.tp_size; i++)
+                                process.tp[i] = tprocess[i];
+                            if (process.number_transfs <= 15) {
+                                process_queue[process.number_transfs - 1][queue_size[process.number_transfs -1]++] = process;
+                            }
+                            else {
+                                // Se tiver mais de 16 processos numa mesma fila de espera, avança para a última fila de espera
+                                process_queue[15][queue_size[15]++] = process;
+                            }
+                            // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                            // PARAMOS AQUI !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                            // processing();
+                        }
+                        else send_reply_message("exceeded maximum number of transformations set by 'config-file'\n", request.pid, 0);
 
                     }
                     else {
