@@ -31,17 +31,17 @@ Transf transfs[7]; // Só temos 7 transformações possíveis
 int transf_availables = 0;
 
 Process processes[1024]; // processos a serem executados ao mesmo tempo (max 1024 processos)
-Process process_queue[16][512]; // processos em fila-de-espera (Podemos guardar no máximo 512 processos em cada linha)
+Process ready_queue[16][512]; // processos em fila-de-espera (Podemos guardar no máximo 512 processos em cada linha)
 // (16 -> indica nº de transformações o que o programa terá de executar no seu processo)
 // ex: 2  ->  vai executar 3 transformações no processo atual
 // NOTA: Caso o processo execute mais do que 16 transformações, estes também serão guardadaos na linha 15 
-int queue_size[16] = {0}; // Nº total de processos na fila-de-espera
-int queue_total_size = 0; // Soma total de todos os valores do array anterior
+int ready_queue_size[16] = {0}; // Nº total de processos na fila-de-espera
+int ready_queue_total_size = 0; // Soma total de todos os valores do array anterior
 int process_total_size = 0; // Nº total de processos ATIVOS
 
 
 
-//         processes[number_process].active = true;
+//         processes[number_process].running = true;
 
 // NAME: encrypt ; decrypt; bcompress ; bdecompress ; gcompress ; gdecompress ; nop
 int hash_transf (char* transf_name) {
@@ -350,7 +350,7 @@ void init_tprocess(TProcess tprocess[7]){
 }
 
 void close_handler(int signum) {
-    while(queue_total_size > 0){
+    while(ready_queue_total_size > 0){
         processing();
     }
     unlink(CLIENT_TO_SERVER_FIFO);
@@ -368,7 +368,7 @@ void sigusr1_handler(int signum) {
     for (i = 0; i < process_total_size; i++) {
         if (processes[i].fork_pid == pid) break;
     }
-    processes[i].active = false;
+    processes[i].running = false;
     for (int j = 0; j < processes[i].tp_size; j++) {
         int r = hash_transf(processes[i].transf_names[j]);
         transf_availables += transfs[r].running;
@@ -435,20 +435,22 @@ int main(int argc, char* argv[]) {
                             }
                             process.number_transfs = request.n_args - 3;
                             process.client_pid = request.pid;
-                            process.active = false;
-                            process.inqueue = true;
-                            queue_total_size++;
+                            process.running = false;
+                            process.ready = true;
+                            ready_queue_total_size++;
                             strcpy(process.name_input, request.argv[1]);
                             strcpy(process.name_output, request.argv[2]);
                             process.tp_size = tp_size;
                             for (i = 0; i < process.tp_size; i++)
                                 process.tp[i] = tprocess[i];
                             if (process.number_transfs <= 15) {
-                                process_queue[process.number_transfs - 1][queue_size[process.number_transfs -1]++] = process;
+                                ready_queue[process.number_transfs - 1][ready_queue_size[process.number_transfs -1]] = process;
+                                ready_queue_size[process.number_transfs -1]++;
                             }
                             else {
                                 // Se tiver mais de 16 processos numa mesma fila de espera, avança para a última fila de espera
-                                process_queue[15][queue_size[15]++] = process;
+                                ready_queue[15][ready_queue_size[15]] = process;
+                                ready_queue_size[15]++;
                             }
                             // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                             // PARAMOS AQUI !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
