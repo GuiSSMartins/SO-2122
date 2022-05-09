@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <fcntl.h> // modos de abertura 
+#include <sys/stat.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -55,7 +56,6 @@ void close_handler(int signum) {
 }
 
 int main(int argc, char* argv[]) {
-    char buffer[1024];
 
     sprintf(path_server_to_client_fifo, "namedpipe/%d", (int)getpid());
 
@@ -78,6 +78,7 @@ int main(int argc, char* argv[]) {
         write(1, status, status_size);
         write(1, example, example_size);
     }
+
     else if ((strcmp(argv[1],"status")==0) || (strcmp(argv[1],"proc-file")==0)) {
 
         if ((strcmp(argv[1], "status") == 0) && argc > 2) {

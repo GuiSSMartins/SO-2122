@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <fcntl.h> // modos de abertura 
+#include <sys/stat.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -24,18 +25,18 @@ int server_pid; // PID do Servidor
 
 #define CLIENT_TO_SERVER_FIFO "namedpipe/client_to_server_fifo" // Path para guadra fifo do cliente para o servidor
 
-char* transf_folder[1024]; // path da pasta onde guardamos os progrmas das transformações
+char transf_folder[1024]; // path da pasta onde guardamos os progrmas das transformações
 
 
 Transf transfs[7]; // Só temos 7 transformações possíveis
 int transf_availables = 0;
 
 Process processes[1024]; // processos a serem executados ao mesmo tempo (max 1024 processos)
-Process ready_queue[16][512]; // processos em fila-de-espera (Podemos guardar no máximo 512 processos em cada linha)
-// (16 -> indica nº de transformações o que o programa terá de executar no seu processo)
+Process ready_queue[8][512]; // processos em fila-de-espera (Podemos guardar no máximo 512 processos em cada linha)
+// (7 -> indica nº de transformações o que o programa terá de executar no seu processo)
 // ex: 2  ->  vai executar 3 transformações no processo atual
-// NOTA: Caso o processo execute mais do que 16 transformações, estes também serão guardadaos na linha 15 
-int ready_queue_size[16] = {0}; // Nº total de processos na fila-de-espera
+// NOTA: Caso o processo execute mais do que 7 transformações, estes também serão guardadaos na linha 15 
+int ready_queue_size[8] = {0}; // Nº total de processos na fila-de-espera
 int ready_queue_total_size = 0; // Soma total de todos os valores do array anterior
 int process_total_size = 0; // Nº total de processos ATIVOS
 
@@ -126,7 +127,7 @@ void exec_transfs(int index_process) {
         for (i = 0; i < number_transfs; i++) {
             if (i == 0) { // 1ª Pipe - Apenas ESCRITA
                 if (fork() == 0) {
-                    index = hash_tranfs(processes[index_process].transf_names[i]);
+                    index = hash_transf(processes[index_process].transf_names[i]);
                     for (j = 1; j < number_transfs - 1; j++) {
                         close(pipes[j][0]);
                         close(pipes[j][1]);
@@ -243,10 +244,10 @@ void read_config_file(char* path) { // Lê do ficheiro config os dados sobre a t
 // Flag: 0 -> fechar a fifo
 //       1 -> para continuar o programa
 // pid do request
-void send_reply_message(char* message, int pid, int status) {
+int send_reply_message(char* message, int pid, int status) {
     Reply reply;
     reply.argc = 1;
-    reply.status = status;
+    reply.status = status; // aqui guaradamos o valor da flag
     strcpy(reply.argv[0], message);
     int server_to_client_fifo;
     char path_server_to_client_fifo[128];
@@ -260,6 +261,59 @@ void send_reply_message(char* message, int pid, int status) {
     write(server_to_client_fifo, &reply, sizeof(Reply));
     close(server_to_client_fifo);
     if (!status) unlink(path_server_to_client_fifo);
+
+    return 0;
+}
+
+// Flag: 0 -> fechar a fifo
+//       1 -> para continuar o programa
+// pid do Request do cliente
+int send_server_status(int pid) {
+    Reply reply;
+    reply.argc = 0;
+    int i, j;
+
+    // status dos processos a rodar no servidor
+    for (i = 0; i < process_total_size; i++) {
+        if (processes[i].running) {
+            char commands[512] = "";
+            for (j = 0; j < processes[i].number_transfs; j++) {
+                strcat(commands, " ");
+                strcat(commands, processes[i].transf_names[j]);
+            }
+
+            char process[2048];
+            sprintf(process, "task #%d: proc-file %s %s %s\n", i + 1, processes[i].name_input, processes[i].name_output, commands);
+            strcpy(reply.argv[reply.argc], process);
+            reply.argc++;
+        }
+    }
+
+    //status das 7 transformações
+    for (i = 0; i < 7; i++) {
+        char transfs_status[128];
+        sprintf(transfs_status, "transf %s: %d/%d (running/max)\n", transfs[i].name, transfs[i].running, transfs[i].max);
+        strcpy(reply.argv[reply.argc], transfs_status);
+        reply.argc++;
+    }
+    
+    int server_to_client_fifo;
+    char path_server_to_client_fifo[128];
+    sprintf(path_server_to_client_fifo, "namedpipe/%d", pid);
+    if ((server_to_client_fifo = open(path_server_to_client_fifo, O_WRONLY)) == -1) {
+        char invalid_fifo[256];
+        int invalid_fifo_size = sprintf(invalid_fifo, "sdstore: couldn't open server-to-client FIFO\n");
+        write(1, invalid_fifo, invalid_fifo_size);
+        return 1;
+    }
+
+    reply.status = 0;  // flag para fechar a fifo
+
+    write(server_to_client_fifo, &reply, sizeof(Reply));
+    close(server_to_client_fifo);
+    unlink(path_server_to_client_fifo); // "matar" o ficheiro da fifo
+
+    return 0;
 }
 
 // verificar se o nome da tarnsformação recebida é uma tarnsformação válida
@@ -268,8 +322,7 @@ int verify_transf_name(char* transf_name) {
     if(transf_index != -1){
         if (strcmp(transfs[transf_index].name, transf_name) == 0) return 1;
     }
-    else return 0;
-    
+    return 0;
 }
 
 // verificar se nomes das tarnsformações pedidas no comando são tarnsformações válidas
@@ -277,7 +330,7 @@ int verify_transfs_names(char transfs_names[64][64], int number_transf, int* ind
     int valid = 1;
     int i;
     for (i = 0; i < number_transf && valid; i++) {
-        if (!verify_transf(transfs_names[i])) valid = 0;
+        if (!verify_transf_name(transfs_names[i])) valid = 0;
     }
     *index = i - 1; // índice da última transformação válida
     return valid;
@@ -303,7 +356,7 @@ int add_info_tprocess(char transfs_names[64][64], int number_transfs, TProcess t
 
 // verifica se a quantidade de transformações é válida para o máximo recebido
 int validate_transf(int index, int number) {
-    if (number > transfs[index].max) return 0; // pode ser que não precisemos desta comparação !!!!!!!!!!!!!!
+    if (number > transfs[index].max) return 0;
    
     return (transfs[index].running + number <= transfs[index].max ? 1 : 0);
     
@@ -351,14 +404,6 @@ void init_tprocess(TProcess tprocess[7]){
     }
 }
 
-void close_handler(int signum) {
-    while(ready_queue_total_size > 0){
-        processing();
-    }
-    unlink(CLIENT_TO_SERVER_FIFO);
-    exit(0);
-}
-
 // Executar um processo ou conjunto de processos
 void run_process() {
     int i, j;
@@ -385,27 +430,52 @@ void run_process() {
     }
 }
 
+void close_handler(int signum) {
+    while(ready_queue_total_size > 0){
+        run_process();
+    }
+    unlink(CLIENT_TO_SERVER_FIFO);
+    exit(0);
+}
+
 // Sinal para "matar" um processo 'proc-file'
-// NÂO ESTÀ TERMIANDO!!!!!!!!!!!!!!
-/*
+// Também envia informações sobre o nº de bytes do ficheiro de input e de output
 void sigusr1_handler(int signum) {
     int status;
     int pid = wait(&status);
+    // int pid = wait(NULL);
+    int count = 0;
 
     int i;
     for (i = 0; i < process_total_size; i++) {
         if (processes[i].fork_pid == pid) break;
+        // fork_pid -> pid da execução do processo
     }
-    processes[i].running = false;
-    for (int j = 0; j < processes[i].tp_size; j++) {
-        int r = hash_transf(processes[i].transf_names[j]);
-        transf_availables += transfs[r].running;
-        transfs[r].running = 0;
+    processes[i].running = false; // encontramos o processo que queremos parar
+    for (int j = 0; j < processes[i].tp_size && count < processes[i].tp_size; j++) {
+        if(processes[i].tp[j].n > 0){
+            count++;
+            int transf_index = hash_transf(processes[i].tp[j].name);
+            transf_availables += processes[i].tp[j].n; // x processos terminaram; x ficaram disponíveis
+            transfs[transf_index].running -= processes[i].tp[j].n; // estes x processos já não estão mais a correr
+        }
     }
-    send_message("processed\n", processes[i].client_pid, 1);
+
+    // Caluclar nº de bytes do ficheiro de input e de output
+    int fd_input = open(processes[i].name_input, O_RDONLY);
+    int fd_output = open(processes[i].name_output, O_RDONLY);
+
+    int bytes_input = get_file_size(fd_input);
+    int bytes_output = get_file_size(fd_output);
+    
+    close(fd_input);
+    close(fd_output);    
+
+    char message[128];
+    sprintf(message, "concluded (bytes-input: %d, bytes-output: %d)\n", bytes_input, bytes_output);
+    send_reply_message(message, processes[i].client_pid, 0);
     run_process();
 }
-*/
 
 
 // $ ./sdstored config-filename transformations-folder
@@ -416,7 +486,7 @@ int main(int argc, char* argv[]) {
 
     signal(SIGINT, close_handler);
     signal(SIGTERM, close_handler);
-    // signal(SIGUSR1, sigusr1_handler);
+    signal(SIGUSR1, sigusr1_handler);
 
     if (argc == 3) {
         strcpy(transf_folder, argv[2]);
@@ -435,7 +505,12 @@ int main(int argc, char* argv[]) {
             int client_to_server_fifo = open(CLIENT_TO_SERVER_FIFO, O_RDONLY, 0666);
             while (read(client_to_server_fifo, &request, sizeof(Request)) > 0) {
 
-                if (request.n_args > 3 && strcmp("proc-file", request.argv[0]) == 0) { // Transformação válida
+                // status
+                if (request.n_args == 1 && strcmp("status", request.argv[0]) == 0) {
+                    send_server_status(request.pid);
+                }
+                // proc-file
+                else if (request.n_args > 3 && strcmp("proc-file", request.argv[0]) == 0) { // Transformação válida
                     send_reply_message("pending\n", request.pid, 1); // flag: 1 -> há conteúdo do cliente para ler
                     char transfs_names_process[64][64]; // nomes das várias transformações
 
@@ -446,7 +521,7 @@ int main(int argc, char* argv[]) {
                         strcpy(transfs_names_process[i - 3], request.argv[i]);
                     }
                     // Só fazemos todas as transformações apenas se todos os nomes delas forem válidas
-                    if (verify_transfs(transfs_names_process, request.n_args - 3, &last_valid_transf_index)) { // sem os argumentos de inicio do store
+                    if (verify_transfs_names(transfs_names_process, request.n_args - 3, &last_valid_transf_index)) { // sem os argumentos de inicio do store
                     
                         TProcess tprocess[7]; // tuplo dos processos
                         init_tprocess(tprocess);
@@ -476,9 +551,9 @@ int main(int argc, char* argv[]) {
                                 ready_queue_size[process.number_transfs -1]++;
                             }
                             else {
-                                // Se tiver mais de 16 processos numa mesma fila de espera, avança para a última fila de espera
-                                ready_queue[15][ready_queue_size[15]] = process;
-                                ready_queue_size[15]++;
+                                // Se tiver mais de 7 processos numa mesma fila de espera, avança para a última fila de espera
+                                ready_queue[7][ready_queue_size[7]] = process;
+                                ready_queue_size[7]++;
                             }
                             run_process();
                         }
@@ -488,12 +563,12 @@ int main(int argc, char* argv[]) {
                     else {
                         char message[1024];
                         sprintf(message, "invalid transformation: %s\n", request.argv[last_valid_transf_index + 3]);
-                        send_message(message, request.pid, 0); // fechámos a pipe
+                        send_reply_message(message, request.pid, 0); // fechámos a pipe
                     }
                 }
-
             }
 
+            close(client_to_server_fifo);
         }
 
     }
@@ -504,5 +579,5 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-
+    return 0;
 }
