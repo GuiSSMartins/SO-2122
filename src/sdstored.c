@@ -326,11 +326,13 @@ int validate_transfs(TProcess tprocess[7], int tp_size) {
 }
 
 // atualizar o 'running' de cada uma das tarnsformações do processo 
-void save_transfs(TProcess tprocess[7]) {
+void save_transfs(TProcess tprocess[7], int tp_size) {
     int i;
-    for (i = 0; i < 7; i++) {
+    int count = 0;
+    for (i = 0; i < 7 && count < tp_size; i++) {
         int transf_index = hash_transf(tprocess[i].name);
         if(transf_index != -1){
+            count++;
             transfs[transf_index].running += tprocess[i].n;
         }
     }
@@ -357,6 +359,32 @@ void close_handler(int signum) {
     exit(0);
 }
 
+// Executar um processo ou conjunto de processos
+void run_process() {
+    int i, j;
+    for (i = 0; ready_queue_total_size > 0 && i < transf_availables; i++) {
+        for (j = 0; j < ready_queue_size[i]; j++) {
+            if (ready_queue[i][j].ready) {
+                if (validate_transfs( ready_queue[i][j].tp, ready_queue[i][j].tp_size) ) {
+                    
+                    save_transfs(ready_queue[i][j].tp, ready_queue[i][j].tp_size);
+                    transf_availables -= ready_queue[i][j].number_transfs;
+                    ready_queue[i][j].ready = false;
+                    ready_queue_total_size--;
+                    Process process = ready_queue[i][j];
+                    process.running = true;
+                    processes[process_total_size] = process;
+                    process_total_size++;
+                    send_reply_message("processing\n", processes[process_total_size - 1].client_pid, 0);
+                    
+                    if (i == 0) exec_transf(process_total_size - 1);
+                    else exec_transfs(process_total_size - 1);
+                }
+            }
+        }
+    }
+}
+
 // Sinal para "matar" um processo 'proc-file'
 // NÂO ESTÀ TERMIANDO!!!!!!!!!!!!!!
 /*
@@ -375,7 +403,7 @@ void sigusr1_handler(int signum) {
         transfs[r].running = 0;
     }
     send_message("processed\n", processes[i].client_pid, 1);
-    processing();
+    run_process();
 }
 */
 
@@ -452,9 +480,7 @@ int main(int argc, char* argv[]) {
                                 ready_queue[15][ready_queue_size[15]] = process;
                                 ready_queue_size[15]++;
                             }
-                            // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                            // PARAMOS AQUI !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                            // processing();
+                            run_process();
                         }
                         else send_reply_message("exceeded maximum number of transformations set by 'config-file'\n", request.pid, 0);
 
