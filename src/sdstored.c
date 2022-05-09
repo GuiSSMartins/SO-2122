@@ -66,8 +66,11 @@ int hash_transf (char* transf_name) {
                     return 5;
             }
 
-        default: // nop
+        case 'n': // nop
             return 6;   
+        
+        default:
+            return -1;
     }
 }
 
