@@ -303,7 +303,7 @@ int add_info_tprocess(char transfs_names[64][64], int number_transfs, TProcess t
 
 // verifica se a quantidade de transformações é válida para o máximo recebido
 int validate_transf(int index, int number) {
-    if (number > transfs[index].max) return 0;
+    if (number > transfs[index].max) return 0; // pode ser que não precisemos desta comparação !!!!!!!!!!!!!!
    
     return (transfs[index].running + number <= transfs[index].max ? 1 : 0);
     
@@ -318,7 +318,7 @@ int validate_transfs(TProcess tprocess[7], int tp_size) {
         int transf_index = hash_transf(tprocess[i].name);
         if(transf_index != -1){
             count++;
-            if(!validate_trans(transf_index, tprocess[i].n)) valid = 0;
+            if(!validate_transf(transf_index, tprocess[i].n)) valid = 0;
         }
         
     }
