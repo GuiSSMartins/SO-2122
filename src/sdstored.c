@@ -147,7 +147,7 @@ void exec_transfs(int index_process) {
                     strcat(transf_path, transfs[index].name);
 
                     execl(transf_path, transf_path, NULL);
-                    _exit(EXIT_SUCCESS);
+                    _exit(EXIT_FAILURE);
                 }
             }
             else if (i == number_transfs - 1) { // Última Pipe - Apenas LEITURA
@@ -175,7 +175,7 @@ void exec_transfs(int index_process) {
                         wait(&status);
                         kill(server_pid, SIGUSR1);
                     }
-                    _exit(EXIT_SUCCESS);
+                    _exit(EXIT_FAILURE);
                 }
             }
             else { // Outras Pipes - LEITURA e ESCRITA
@@ -199,7 +199,7 @@ void exec_transfs(int index_process) {
                     strcpy(transf_path, transf_folder);
                     strcat(transf_path, transfs[index].name);
                     execl(transf_path, transf_path, NULL);
-                    _exit(EXIT_SUCCESS);
+                    _exit(EXIT_FAILURE);
                 }
             }
         }
@@ -512,6 +512,7 @@ int main(int argc, char* argv[]) {
                 }
                 // proc-file
                 else if (request.n_args > 3 && strcmp("proc-file", request.argv[0]) == 0) { // Transformação válida
+                    
                     send_reply_message("pending\n", request.pid, 1); // flag: 1 -> há conteúdo do cliente para ler
                     char transfs_names_process[64][64]; // nomes das várias transformações
 
