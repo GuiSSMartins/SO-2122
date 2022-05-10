@@ -27,10 +27,10 @@ obj/sdstored.o: src/sdstored.c includes/request.h includes/process.h includes/re
 # --------------
 
 bin/sdstore: obj/sdstore.o
-	gcc -g obj/sdstore.o -o bin/sdstore
+	$(CC) $(CFLAGS) $< -o $@
 
 obj/sdstore.o: src/sdstore.c includes/reply.h includes/request.h 
-	gcc -Wall -g -c src/sdstore.c -o obj/sdstore.o
+	$(CC) $(CFLAGS) -c $< -o $@
 
 
 # ----------------------
