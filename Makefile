@@ -1,20 +1,20 @@
 CC = gcc
 CFLAGS = -Wall -g
 
-all: server client transfs
+default: server client transfs
 server: bin/sdstored
 client: bin/sdstore
 transfs: bin/nop bin/gcompress bin/gdecompress bin/bcompress bin/bdecompress bin/encrypt bin/decrypt
 
 # ----------------
-# -- sdstored ---
+# -- sdstored ----
 # ----------------
 
 bin/sdstored: obj/sdstored.o
-	gcc -g obj/sdstored.o -o bin/sdstored
+	$(CC) $(CFLAGS) $< -o $@
 
 obj/sdstored.o: src/sdstored.c includes/request.h includes/process.h includes/reply.h includes/tprocess.h includes/transfs.h
-	gcc -Wall -g -c src/sdstored.c -o obj/sdstored.o
+	$(CC) $(CFLAGS) -c $< -o $@
 
 
 # --------------
@@ -76,4 +76,4 @@ obj/nop.o: bin/nop.c
 
 
 clean:
-	-rm -rf obj/* bin/{ sdstore, sdstored, *compress, *decompress, encrypt, decrypt, nop }
+	-rm -rf obj/* bin/sdstore bin/sdstored namedpipe/* 

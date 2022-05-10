@@ -3,7 +3,7 @@
 #include <sys/wait.h>
 #include <fcntl.h> // modos de abertura 
 #include <sys/stat.h>
-
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h> // sizeof
@@ -98,14 +98,14 @@ void exec_transf(int number_process) {
         close(fd_output);
 
         strcpy(transf_path, transf_folder);
-        strcat(transf_path, transfs[transf_index].bin);
+        strcat(transf_path, transfs[transf_index].name);
 
         if (fork() == 0) {
             execl(transf_path, transf_path, NULL);
         } 
         else {
             wait(&status);
-            // kill(getppid(), SIGUSR1);
+            kill(getppid(), SIGUSR1);
         }
         _exit(0);
     }
@@ -142,7 +142,7 @@ void exec_transfs(int index_process) {
                     close(pipes[0][1]);
 
                     strcpy(transf_path, transf_folder);
-                    strcat(transf_path, transfs[index].bin);
+                    strcat(transf_path, transfs[index].name);
 
                     execl(transf_path, transf_path, NULL);
                     _exit(EXIT_FAILURE);
@@ -165,7 +165,7 @@ void exec_transfs(int index_process) {
                     close(output_fd);
 
                     strcpy(transf_path, transf_folder);
-                    strcat(transf_path, transfs[index].bin);
+                    strcat(transf_path, transfs[index].name);
                     if (fork() == 0) {
                         execl(transf_path, transf_path, NULL);
                     }
@@ -195,7 +195,7 @@ void exec_transfs(int index_process) {
                     close(pipes[i][1]);
 
                     strcpy(transf_path, transf_folder);
-                    strcat(transf_path, transfs[index].bin);
+                    strcat(transf_path, transfs[index].name);
                     execl(transf_path, transf_path, NULL);
                     _exit(EXIT_FAILURE);
                 }
@@ -228,11 +228,7 @@ void read_config_file(char* path) { // Lê do ficheiro config os dados sobre a t
         char* token = strtok(buffer, " ");
         int transf_index = hash_transf(token);
         strcpy(transfs[transf_index].name, token);
-
-        char bin[64];
-        sprintf(bin, "/bin/%s", transfs[i].name);
-        strcpy(transfs[transf_index].bin, bin);
-        
+                
         token = strtok(NULL, " ");
         transfs[transf_index].max = atoi(token);
         transf_availables += transfs[transf_index].max;
@@ -249,9 +245,11 @@ int send_reply_message(char* message, int pid, int status) {
     reply.argc = 1;
     reply.status = status; // aqui guaradamos o valor da flag
     strcpy(reply.argv[0], message);
+
     int server_to_client_fifo;
     char path_server_to_client_fifo[128];
     sprintf(path_server_to_client_fifo, "namedpipe/%d", pid);
+
     if ((server_to_client_fifo = open(path_server_to_client_fifo, O_WRONLY)) == -1) {
         char invalid_fifo[256];
         int invalid_fifo_size = sprintf(invalid_fifo, "sdstore: couldn't open server-to-client FIFO\n");
@@ -420,7 +418,7 @@ void run_process() {
                     process.running = true;
                     processes[process_total_size] = process;
                     process_total_size++;
-                    send_reply_message("processing\n", processes[process_total_size - 1].client_pid, 0);
+                    send_reply_message("processing\n", processes[process_total_size - 1].client_pid, 1);
                     
                     if (i == 0) exec_transf(process_total_size - 1);
                     else exec_transfs(process_total_size - 1);
@@ -461,7 +459,7 @@ void sigusr1_handler(int signum) {
         }
     }
 
-    // Caluclar nº de bytes do ficheiro de input e de output
+    //Caluclar nº de bytes do ficheiro de input e de output
     int fd_input = open(processes[i].name_input, O_RDONLY);
     int fd_output = open(processes[i].name_output, O_RDONLY);
 
@@ -470,9 +468,10 @@ void sigusr1_handler(int signum) {
     
     close(fd_input);
     close(fd_output);    
-
     char message[128];
     sprintf(message, "concluded (bytes-input: %d, bytes-output: %d)\n", bytes_input, bytes_output);
+
+    
     send_reply_message(message, processes[i].client_pid, 0);
     run_process();
 }
