@@ -4,6 +4,7 @@
 #include <fcntl.h> // modos de abertura 
 #include <sys/stat.h>
 #include <signal.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h> // sizeof
@@ -106,6 +107,7 @@ void exec_transf(int number_process) {
         else {
             wait(&status);
             kill(getppid(), SIGUSR1);
+            // pid do processo-pai
         }
         _exit(0);
     }
@@ -145,7 +147,7 @@ void exec_transfs(int index_process) {
                     strcat(transf_path, transfs[index].name);
 
                     execl(transf_path, transf_path, NULL);
-                    _exit(EXIT_FAILURE);
+                    _exit(EXIT_SUCCESS);
                 }
             }
             else if (i == number_transfs - 1) { // Última Pipe - Apenas LEITURA
@@ -173,7 +175,7 @@ void exec_transfs(int index_process) {
                         wait(&status);
                         kill(server_pid, SIGUSR1);
                     }
-                    _exit(EXIT_FAILURE);
+                    _exit(EXIT_SUCCESS);
                 }
             }
             else { // Outras Pipes - LEITURA e ESCRITA
@@ -197,7 +199,7 @@ void exec_transfs(int index_process) {
                     strcpy(transf_path, transf_folder);
                     strcat(transf_path, transfs[index].name);
                     execl(transf_path, transf_path, NULL);
-                    _exit(EXIT_FAILURE);
+                    _exit(EXIT_SUCCESS);
                 }
             }
         }
@@ -228,7 +230,7 @@ void read_config_file(char* path) { // Lê do ficheiro config os dados sobre a t
         char* token = strtok(buffer, " ");
         int transf_index = hash_transf(token);
         strcpy(transfs[transf_index].name, token);
-                
+        
         token = strtok(NULL, " ");
         transfs[transf_index].max = atoi(token);
         transf_availables += transfs[transf_index].max;
@@ -459,7 +461,7 @@ void sigusr1_handler(int signum) {
         }
     }
 
-    //Caluclar nº de bytes do ficheiro de input e de output
+    // Caluclar nº de bytes do ficheiro de input e de output
     int fd_input = open(processes[i].name_input, O_RDONLY);
     int fd_output = open(processes[i].name_output, O_RDONLY);
 
@@ -468,10 +470,10 @@ void sigusr1_handler(int signum) {
     
     close(fd_input);
     close(fd_output);    
+
     char message[128];
     sprintf(message, "concluded (bytes-input: %d, bytes-output: %d)\n", bytes_input, bytes_output);
 
-    
     send_reply_message(message, processes[i].client_pid, 0);
     run_process();
 }

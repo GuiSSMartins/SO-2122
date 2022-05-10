@@ -74,7 +74,7 @@ int main(int argc, char* argv[]) {
         char status[128];
         char example[128];
         int status_size = sprintf(status, "%s status\n", argv[0]);
-        int example_size = sprintf(example, "%s proc-file priority input-filename output-filename transformation-id-1 transformation-id-2 ...\n", argv[0]);
+        int example_size = sprintf(example, "%s proc-file input-filename output-filename transformation-id-1 transformation-id-2 ...\n", argv[0]);
         write(1, status, status_size);
         write(1, example, example_size);
     }

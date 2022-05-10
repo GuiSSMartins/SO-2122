@@ -1,14 +1,19 @@
 CC = gcc
 CFLAGS = -Wall -g
 
-default: server client transfs
+all: server client transfs folder
 server: bin/sdstored
 client: bin/sdstore
 transfs: bin/nop bin/gcompress bin/gdecompress bin/bcompress bin/bdecompress bin/encrypt bin/decrypt
 
-# ----------------
-# -- sdstored ----
-# ----------------
+
+folder:
+	mkdir -p namedpipe
+
+
+# --------------
+# -- sdstored --
+# --------------
 
 bin/sdstored: obj/sdstored.o
 	$(CC) $(CFLAGS) $< -o $@
@@ -76,4 +81,4 @@ obj/nop.o: bin/nop.c
 
 
 clean:
-	-rm -rf obj/* bin/sdstore bin/sdstored namedpipe/* 
+	-rm -rf obj/* bin/sdstore bin/sdstored bin/*compress bin/*decompress bin/encrypt bin/decrypt bin/nop namedpipe/*
