@@ -24,10 +24,10 @@ char path_server_to_client_fifo[128]; // path para guadar Fifo do servidor aos (
 
 void create_request(int client_to_server_fifo, int argc, char** argv) {
     Request request;
-    request.n_args = argc - 1; // (proc-file) nº de transformações
+    request.n_messages = argc - 1; // (proc-file) nº de transformações
     request.pid = getpid();
     for (int i = 1; i < argc; i++) {
-        strcpy(request.argv[i - 1], argv[i]);
+        strcpy(request.message[i - 1], argv[i]);
     }
     write(client_to_server_fifo, &request, sizeof(Request));
 }
@@ -38,8 +38,8 @@ void reply() {
     while (1) {
         while (read(server_to_client_fifo, &reply, sizeof(Reply)) > 0) {
             int i;
-            for (i = 0; i < reply.argc; i++) {
-                write(1, reply.argv[i], strlen(reply.argv[i])); // escrever o estado de cada processo no ecrã
+            for (i = 0; i < reply.n_messages; i++) {
+                write(1, reply.message[i], strlen(reply.message[i])); // escrever o estado de cada processo no ecrã
             }
             if (!reply.status) { // Fechar o programa
                 close(server_to_client_fifo);
