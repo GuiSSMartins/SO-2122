@@ -26,7 +26,7 @@ int server_pid; // PID do Servidor
 
 #define CLIENT_TO_SERVER_FIFO "namedpipe/client_to_server_fifo" // Path para guadra fifo do cliente para o servidor
 
-char transf_folder[1024]; // path da pasta onde guardamos os progrmas das transformações
+char transf_folder[1024]; // path da pasta onde guardamos os programas das transformações
 
 
 Transf transfs[7]; // Só temos 7 transformações possíveis
@@ -37,8 +37,6 @@ Process ready_queue[4096]; // processos em fila-de-espera (Podemos guardar no m�
 int ready_queue_total_size = 0; // Soma total de todos os valores do array anterior
 int process_total_size = 0; // Nº total de processos ATIVOS
 
-
-//         processes[number_process].running = true;
 
 // NAME: encrypt ; decrypt; bcompress ; bdecompress ; gcompress ; gdecompress ; nop
 int hash_transf (char* transf_name) {

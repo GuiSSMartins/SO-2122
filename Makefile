@@ -1,13 +1,14 @@
 CC = gcc
 CFLAGS = -Wall -g
 
-all: server client transfs folder
+all: folder server client transfs
 server: bin/sdstored
 client: bin/sdstore
 transfs: bin/nop bin/gcompress bin/gdecompress bin/bcompress bin/bdecompress bin/encrypt bin/decrypt
 
 
 folder:
+	mkdir -p obj
 	mkdir -p namedpipe
 
 

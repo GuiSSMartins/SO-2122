@@ -12,9 +12,7 @@ typedef struct process {
     char transf_names[64][64]; // (var. auxiliar) nomes das várias transformações
                               // os nomes das transformações são guaradados pela ordem do comando original 
     char name_input[512]; // nome do ficheiro de input
-    int input_size;
     char name_output[512]; // nome do ficheiro de output
-    int output_size;
     int number_transfs; // nº de transformações que se irão realizar
     bool running; // indica se o processo está ativo (ou não)
     bool ready; // indica se está em fila de espera / queue 
